@@ -1,13 +1,13 @@
 import { useState, useEffect } from 'react'
 import { useNavigate, useLocation } from 'react-router-dom'
-import { createTicket, getTechnicians, getCategories, searchClients, syncLocalDMAConnection } from '../../data/api'
+import { createTicket, getTechnicians, getCategories, searchClients } from '../../data/api'
 import TopNav from '../../components/TopNav'
 
 const MODULES = [
   {
     icon: '👤', label: 'Client Info',
     fields: [
-      { key: 'client',  label: 'Client name / account', type: 'clientSelect', span: 2 },
+      { key: 'client',  label: 'Client name / account', type: 'clientSelect', span: 2, required: true },
       { key: 'address', label: 'Address' },
       { key: 'zone',    label: 'Zone' },
       { key: 'phone',   label: 'Phone' },
@@ -18,8 +18,8 @@ const MODULES = [
     icon: '🔧', label: 'Problem Details',
     fields: [
       { key: 'priority',    label: 'Priority',    type: 'select', options: ['high', 'med', 'low'] },
-      { key: 'category',    label: 'Category',    type: 'categorySelect' },
-      { key: 'description', label: 'Description', type: 'textarea', span: 2 },
+      { key: 'category',    label: 'Category',    type: 'categorySelect', required: true },
+      { key: 'description', label: 'Description', type: 'textarea', span: 2, required: true },
     ],
   },
   {
@@ -44,6 +44,8 @@ export default function NewTicketForm() {
   const [clientOptions, setClientOptions] = useState([])
   const [showClientOptions, setShowClientOptions] = useState(false)
   const [submitting, setSubmitting] = useState(false)
+  const [fieldErrors, setFieldErrors] = useState({})
+  const [submitError, setSubmitError] = useState('')
   const [form, setForm] = useState({
     client: location.state?.client || '',
     clientRef: '',
@@ -71,7 +73,6 @@ export default function NewTicketForm() {
         setCategories(cats)
       })
       .catch(console.error)
-    syncLocalDMAConnection().catch(console.error)
   }, [])
 
   useEffect(() => {
@@ -90,7 +91,11 @@ export default function NewTicketForm() {
     return () => clearTimeout(timer)
   }, [form.client])
 
-  const update = (key, val) => setForm(f => ({ ...f, [key]: val }))
+  const update = (key, val) => {
+    setForm(f => ({ ...f, [key]: val }))
+    setFieldErrors(errors => ({ ...errors, [key]: '' }))
+    setSubmitError('')
+  }
 
   const selectClient = (client) => {
     if (!client) return
@@ -103,6 +108,8 @@ export default function NewTicketForm() {
       phone: client.phone || f.phone,
       contract: client.plan || f.contract,
     }))
+    setFieldErrors(errors => ({ ...errors, client: '' }))
+    setSubmitError('')
     setShowClientOptions(false)
   }
 
@@ -115,18 +122,35 @@ export default function NewTicketForm() {
   }
 
   const handleSubmit = async () => {
-    if (!form.client.trim() || !form.description.trim()) return
+    const nextErrors = {}
+    if (!form.client.trim()) nextErrors.client = 'Client is required.'
+    if (!form.category.trim()) nextErrors.category = 'Category is required.'
+    if (!form.description.trim()) nextErrors.description = 'Description is required.'
+
+    if (Object.keys(nextErrors).length) {
+      setFieldErrors(nextErrors)
+      setSubmitError('Please fill the required fields.')
+      return
+    }
+
     setSubmitting(true)
+    setSubmitError('')
     try {
       const ticket = await createTicket({ type: ticketType, priority: form.priority, category: form.category, client: form.client, client_ref: form.clientRef, email: form.email, description: form.description, fullDescription: form.description, technician_id: form.technician_id || null, zone: form.zone, address: form.address, contract: form.contract, phone: form.phone, estimatedVisit: form.estimatedVisit || null })
       navigate(`/operator/ticket/${ticket.id}`)
     } catch (err) {
       console.error(err)
+      setSubmitError('Failed to create ticket. Please try again.')
       setSubmitting(false)
     }
   }
 
   const inputStyle = { width: '100%', boxSizing: 'border-box', border: '1px solid #e2e8f0', borderRadius: 6, padding: '8px 10px', fontSize: 13, color: '#1a1a2e', outline: 'none', background: '#fff' }
+  const fieldStyle = key => ({
+    ...inputStyle,
+    border: fieldErrors[key] ? '1.5px solid #e74c3c' : inputStyle.border,
+    boxShadow: fieldErrors[key] ? '0 0 0 3px rgba(231,76,60,0.1)' : 'none',
+  })
 
   return (
     <div style={{ height: '100vh', display: 'flex', flexDirection: 'column', background: '#f8fafc' }}>
@@ -143,6 +167,12 @@ export default function NewTicketForm() {
 
       <div style={{ flex: 1, overflow: 'auto', padding: '28px 0' }}>
         <div style={{ maxWidth: 860, margin: '0 auto', padding: '0 32px' }}>
+          {submitError && (
+            <div style={{ background: '#fff5f5', border: '1px solid #fecaca', borderRadius: 8, padding: '10px 14px', fontSize: 13, color: '#dc2626', marginBottom: 16 }}>
+              {submitError}
+            </div>
+          )}
+
           {/* Type selector */}
           <div style={{ marginBottom: 24 }}>
             <div style={{ fontFamily: 'IBM Plex Mono, monospace', fontSize: 9, color: '#aaa', textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 10 }}>TICKET TYPE</div>
@@ -176,9 +206,9 @@ export default function NewTicketForm() {
               <div style={{ padding: 18, display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14 }}>
                 {module.fields.map((field, fi) => (
                   <div key={fi} style={{ gridColumn: field.span === 2 ? '1 / -1' : 'auto' }}>
-                    <label style={{ display: 'block', fontFamily: 'IBM Plex Mono, monospace', fontSize: 10, color: '#aaa', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 5 }}>{field.label}</label>
+                    <label style={{ display: 'block', fontFamily: 'IBM Plex Mono, monospace', fontSize: 10, color: fieldErrors[field.key] ? '#e74c3c' : '#aaa', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 5 }}>{field.label}{field.required ? ' *' : ''}</label>
                     {field.type === 'textarea' ? (
-                      <textarea value={form[field.key]} onChange={e => update(field.key, e.target.value)} placeholder="Describe the issue..." rows={3} style={{ ...inputStyle, resize: 'vertical', lineHeight: 1.5 }} />
+                      <textarea value={form[field.key]} onChange={e => update(field.key, e.target.value)} placeholder="Describe the issue..." rows={3} style={{ ...fieldStyle(field.key), resize: 'vertical', lineHeight: 1.5 }} />
                     ) : field.type === 'clientSelect' ? (
                       <div style={{ position: 'relative' }}>
                         <input
@@ -187,7 +217,7 @@ export default function NewTicketForm() {
                           onFocus={() => setShowClientOptions(true)}
                           onBlur={pickExactClient}
                           placeholder="Search and select a client"
-                          style={inputStyle}
+                          style={fieldStyle(field.key)}
                         />
                         {showClientOptions && clientOptions.length > 0 && (
                           <div style={{ position: 'absolute', top: 38, left: 0, right: 0, background: '#fff', border: '1px solid #dbe4f0', borderRadius: 8, boxShadow: '0 10px 28px rgba(0,0,0,0.14)', zIndex: 20, overflow: 'hidden', maxHeight: 260, overflowY: 'auto' }}>
@@ -207,7 +237,7 @@ export default function NewTicketForm() {
                         )}
                       </div>
                     ) : field.type === 'categorySelect' ? (
-                      <select value={form[field.key]} onChange={e => update(field.key, e.target.value)} disabled={ticketType === 'install'} style={{ ...inputStyle, cursor: ticketType === 'install' ? 'default' : 'pointer', background: ticketType === 'install' ? '#f8fafc' : '#fff' }}>
+                      <select value={form[field.key]} onChange={e => update(field.key, e.target.value)} disabled={ticketType === 'install'} style={{ ...fieldStyle(field.key), cursor: ticketType === 'install' ? 'default' : 'pointer', background: ticketType === 'install' ? '#f8fafc' : '#fff' }}>
                         {categoryOptions.map(c => <option key={c.id} value={c.name}>{c.name}</option>)}
                       </select>
                     ) : field.type === 'datetime' ? (
@@ -222,8 +252,9 @@ export default function NewTicketForm() {
                         {technicians.map(t => <option key={t.id} value={t.id}>{t.name}</option>)}
                       </select>
                     ) : (
-                      <input value={form[field.key]} onChange={e => update(field.key, e.target.value)} placeholder="—" style={inputStyle} />
+                      <input value={form[field.key]} onChange={e => update(field.key, e.target.value)} placeholder="—" style={fieldStyle(field.key)} />
                     )}
+                    {fieldErrors[field.key] && <div style={{ fontSize: 12, color: '#e74c3c', marginTop: 5 }}>{fieldErrors[field.key]}</div>}
                   </div>
                 ))}
               </div>

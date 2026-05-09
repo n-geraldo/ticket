@@ -30,7 +30,14 @@ function createDMAConnection({ host, port, database, user, password }) {
 router.get('/dma/connection', requireAuth, async (_req, res) => {
   try {
     const r = await optionalSingle('SELECT * FROM settings_dma_connection WHERE id = 1')
-    res.json({ host: r.host || '', port: r.port || 3306, database: r.db_name || '', user: r.db_user || '', table: r.tbl_name || 'clients' })
+    res.json({
+      host: r.host || '',
+      port: r.port || 3306,
+      database: r.db_name || '',
+      user: r.db_user || '',
+      table: r.tbl_name || 'clients',
+      hasPassword: Boolean(r.db_pass),
+    })
   } catch (err) {
     res.status(500).json({ error: err.message })
   }
@@ -40,11 +47,13 @@ router.get('/dma/connection', requireAuth, async (_req, res) => {
 router.put('/dma/connection', requireAuth, async (req, res) => {
   const { host, port, database, user, password, table } = req.body
   try {
+    const current = await optionalSingle('SELECT db_pass FROM settings_dma_connection WHERE id = 1')
+    const nextPassword = password ? password : (current.db_pass || '')
     await pool.query(
       `INSERT INTO settings_dma_connection (id, host, port, db_name, db_user, db_pass, tbl_name)
        VALUES (1, $1, $2, $3, $4, $5, $6)
        ON CONFLICT (id) DO UPDATE SET host=$1, port=$2, db_name=$3, db_user=$4, db_pass=$5, tbl_name=$6`,
-      [host || '', Number(port) || 3306, database || '', user || '', password || '', table || 'clients']
+      [host || '', Number(port) || 3306, database || '', user || '', nextPassword, table || 'clients']
     )
     res.json({ ok: true })
   } catch (err) {
@@ -54,13 +63,15 @@ router.put('/dma/connection', requireAuth, async (req, res) => {
 
 // POST /api/integrations/dma/test
 router.post('/dma/test', requireAuth, async (req, res) => {
-  const { host, port, database, user, password } = req.body
+  const { host, port, database, user } = req.body
   if (!host || !database || !user) {
     return res.status(400).json({ error: 'host, database, and user are required' })
   }
 
   let conn
   try {
+    const current = await optionalSingle('SELECT db_pass FROM settings_dma_connection WHERE id = 1')
+    const password = req.body.password || current.db_pass || ''
     conn = await createDMAConnection({ host, port, database, user, password })
     await conn.query('SELECT 1')
     res.json({ ok: true })

@@ -34,7 +34,6 @@ export const updateUser        = (id, data) => req(`/users/${id}`, { method: 'PA
 export const deleteUser        = (id)       => req(`/users/${id}`, { method: 'DELETE' })
 export const getClients        = ()         => req('/clients')
 export const searchClients     = async (q = '') => {
-  await syncLocalDMAConnection().catch(console.error)
   return req(`/clients/search?q=${encodeURIComponent(q)}`)
 }
 export const createClient      = (data)     => req('/clients',       { method: 'POST',  body: JSON.stringify(data) })
@@ -64,19 +63,3 @@ export const getDMAMapping        = ()     => req('/integrations/dma/mapping')
 export const saveDMAMapping       = (data) => req('/integrations/dma/mapping',    { method: 'PUT', body: JSON.stringify(data) })
 export const getDMAConnection     = ()     => req('/integrations/dma/connection')
 export const saveDMAConnection    = (data) => req('/integrations/dma/connection', { method: 'PUT', body: JSON.stringify(data) })
-
-let lastSyncedDMAConnection = ''
-export async function syncLocalDMAConnection() {
-  let saved = null
-  try {
-    saved = JSON.parse(localStorage.getItem('dma_connection') || 'null')
-  } catch {
-    return false
-  }
-  if (!saved?.host?.trim?.() || !saved?.database?.trim?.() || !saved?.user?.trim?.()) return false
-  const syncKey = JSON.stringify(saved)
-  if (syncKey === lastSyncedDMAConnection) return true
-  await saveDMAConnection(saved)
-  lastSyncedDMAConnection = syncKey
-  return true
-}

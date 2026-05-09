@@ -1,8 +1,11 @@
 import { useState, useEffect } from 'react'
 import { getUsers, createUser, updateUser, deleteUser as apiDeleteUser, testDMAConnection, getZones, addZone as apiAddZone, updateZone as apiUpdateZone, deleteZone as apiDeleteZone, getCategories, addCategory as apiAddCategory, updateCategory as apiUpdateCategory, deleteCategory as apiDeleteCategory, getSlaRules, saveSlaRules, getNotifications, saveNotifications, getDMAMapping, saveDMAMapping, getDMAConnection, saveDMAConnection } from '../../data/api'
+import { DEFAULT_BRAND_NAME, defaultLogoUrl, getBrandLogoUrl, getBrandName, resetCustomLogo, saveBrandName, saveCustomLogo } from '../../branding'
+import BrandLogo from '../../components/BrandLogo'
 import TopNav from '../../components/TopNav'
 
 const TABS = [
+  {id:'branding',     label:'Branding'},
   {id:'users',        label:'Users'},
   {id:'zones',        label:'Zones'},
   {id:'categories',   label:'Categories'},
@@ -24,8 +27,96 @@ const monoLabel = {
   textTransform:'uppercase', letterSpacing:'0.06em', marginBottom:4,
 }
 
+const SETTINGS_TAB_STORAGE_KEY = 'isp_helpdesk_settings_tab'
+const isValidTab = id => TABS.some(t => t.id === id)
+
+function getInitialSettingsTab() {
+  if (typeof window === 'undefined') return 'branding'
+  const hashTab = window.location.hash.replace('#', '')
+  if (isValidTab(hashTab)) return hashTab
+  const savedTab = localStorage.getItem(SETTINGS_TAB_STORAGE_KEY)
+  if (isValidTab(savedTab)) return savedTab
+  return 'branding'
+}
+
 export default function Settings() {
-  const [activeTab, setActiveTab] = useState('users')
+  const [activeTab, setActiveTab] = useState(getInitialSettingsTab)
+  const [brandName, setBrandName] = useState(getBrandName)
+  const [brandMessage, setBrandMessage] = useState('')
+  const [logoPreview, setLogoPreview] = useState(getBrandLogoUrl)
+  const [logoMessage, setLogoMessage] = useState('')
+  const [logoError, setLogoError] = useState('')
+
+  useEffect(() => {
+    const refreshBranding = () => {
+      setLogoPreview(getBrandLogoUrl())
+      setBrandName(getBrandName())
+    }
+    window.addEventListener('storage', refreshBranding)
+    return () => window.removeEventListener('storage', refreshBranding)
+  }, [])
+
+  useEffect(() => {
+    const handleHashChange = () => {
+      const hashTab = window.location.hash.replace('#', '')
+      if (isValidTab(hashTab)) setActiveTab(hashTab)
+    }
+    window.addEventListener('hashchange', handleHashChange)
+    return () => window.removeEventListener('hashchange', handleHashChange)
+  }, [])
+
+  const selectTab = id => {
+    setActiveTab(id)
+    localStorage.setItem(SETTINGS_TAB_STORAGE_KEY, id)
+    window.history.replaceState(null, '', `#${id}`)
+  }
+
+  const updateBrandName = value => {
+    setBrandName(value)
+    saveBrandName(value)
+    setBrandMessage('Name updated.')
+    setTimeout(() => setBrandMessage(''), 1600)
+  }
+
+  const restoreDefaultBrandName = () => {
+    updateBrandName(DEFAULT_BRAND_NAME)
+  }
+
+  const handleLogoUpload = e => {
+    const file = e.target.files?.[0]
+    if (!file) return
+
+    setLogoMessage('')
+    setLogoError('')
+
+    if (!file.type.startsWith('image/')) {
+      setLogoError('Please choose an image file.')
+      return
+    }
+
+    if (file.size > 1500 * 1024) {
+      setLogoError('Choose an image under 1.5 MB so it can be saved in this browser.')
+      return
+    }
+
+    const reader = new FileReader()
+    reader.onload = () => {
+      const dataUrl = String(reader.result)
+      saveCustomLogo(dataUrl)
+      setLogoPreview(dataUrl)
+      setLogoMessage('Logo updated.')
+      e.target.value = ''
+    }
+    reader.onerror = () => setLogoError('Could not read that image. Try another file.')
+    reader.readAsDataURL(file)
+  }
+
+  const restoreDefaultLogo = () => {
+    resetCustomLogo()
+    setLogoPreview(defaultLogoUrl)
+    setLogoError('')
+    setLogoMessage('Default logo restored.')
+  }
 
   // ── Users ──
   const [users, setUsers] = useState([])
@@ -203,6 +294,7 @@ export default function Settings() {
   const [showPass, setShowPass] = useState(false)
   const [dmaStatus, setDmaStatus] = useState('idle') // idle | connecting | connected | error
   const [dmaError, setDmaError] = useState('')
+  const [hasSavedDmaPassword, setHasSavedDmaPassword] = useState(false)
   const [dmaMapping, setDmaMapping] = useState({ ref: 'username', firstName: 'name', lastName: 'surname', phone: 'phone', mobile: 'mobile', zone: 'location' })
   const [mappingSaved, setMappingSaved] = useState(false)
 
@@ -213,6 +305,7 @@ export default function Settings() {
     getDMAConnection()
       .then(saved => {
         if (!saved?.host) return
+        setHasSavedDmaPassword(Boolean(saved.hasPassword))
         setDmaConn(current => ({
           ...current,
           host: saved.host || current.host,
@@ -221,7 +314,12 @@ export default function Settings() {
           user: saved.user || current.user,
           table: saved.table || current.table || 'clients',
         }))
-        setDmaStatus('connected')
+        if (saved.hasPassword) {
+          setDmaStatus('connected')
+        } else {
+          setDmaStatus('idle')
+          setDmaError('DMA password is missing. Enter it and connect again.')
+        }
       })
       .catch(console.error)
   }, [])
@@ -240,6 +338,7 @@ export default function Settings() {
     try {
       await testDMAConnection(dmaConn)
       await saveDMAConnection(dmaConn)
+      setHasSavedDmaPassword(true)
       setDmaStatus('connected')
     } catch (err) {
       setDmaStatus('error')
@@ -270,7 +369,7 @@ export default function Settings() {
         {/* Tab bar */}
         <div style={{display:'flex', borderBottom:'1px solid #e8e8e8', padding:'0 20px', background:'#fff', gap:4, flexShrink:0}}>
           {TABS.map(t => (
-            <button key={t.id} onClick={() => setActiveTab(t.id)} style={{
+            <button key={t.id} onClick={() => selectTab(t.id)} style={{
               padding:'12px 16px', cursor:'pointer', fontSize:13, background:'none', border:'none',
               fontWeight: activeTab===t.id ? 600 : 400,
               color: activeTab===t.id ? '#1a1a2e' : '#888',
@@ -281,6 +380,65 @@ export default function Settings() {
         </div>
 
         <div style={{flex:1, overflow:'auto', padding:24}}>
+
+          {/* Branding */}
+          {activeTab === 'branding' && (
+            <div style={{maxWidth:700}}>
+              <div style={{fontSize:16, fontWeight:600, color:'#1a1a2e', marginBottom:4}}>Branding</div>
+              <div style={{fontSize:13, color:'#888', marginBottom:20}}>Update the app name and logo for the header, login screens, and browser tab.</div>
+
+              <div style={{background:'#fff', border:'1px solid #e8e8e8', borderRadius:8, overflow:'hidden'}}>
+                <div style={{padding:20, borderBottom:'1px solid #f0f0f0'}}>
+                  <div style={{display:'grid', gridTemplateColumns:'1fr auto', gap:12, alignItems:'end'}}>
+                    <div>
+                      <div style={monoLabel}>App Name</div>
+                      <input value={brandName} onChange={e => updateBrandName(e.target.value)}
+                        placeholder="ISP DESK" style={inp} />
+                    </div>
+                    <button onClick={restoreDefaultBrandName}
+                      style={{background:'none', border:'1px solid #e2e8f0', borderRadius:6, padding:'7px 14px', fontSize:13, color:'#555', cursor:'pointer'}}>
+                      Restore Name
+                    </button>
+                  </div>
+                  {brandMessage && <div style={{fontSize:13, color:'#27ae60', fontWeight:600, marginTop:8}}>{brandMessage}</div>}
+                </div>
+
+                <div style={{padding:20, borderBottom:'1px solid #f0f0f0'}}>
+                  <div style={{display:'grid', gridTemplateColumns:'160px 1fr', gap:20, alignItems:'center'}}>
+                    <div style={{height:120, border:'1px solid #e8e8e8', borderRadius:8, background:'#f8fafc', display:'flex', alignItems:'center', justifyContent:'center'}}>
+                      <img src={logoPreview} alt="Current logo preview" style={{width:104, height:104, objectFit:'contain'}} />
+                    </div>
+                    <div>
+                      <div style={monoLabel}>Current Brand</div>
+                      <div style={{background:'#1a1a2e', borderRadius:8, padding:'14px 16px', marginBottom:12}}>
+                        <BrandLogo size={48} compact subtitle="Technical Management System" />
+                      </div>
+                      <div style={{display:'flex', gap:8, alignItems:'center', flexWrap:'wrap'}}>
+                        <label htmlFor="logo-upload" style={{background:'#1a1a2e', color:'#fff', border:'none', borderRadius:6, padding:'8px 16px', fontSize:13, fontWeight:600, cursor:'pointer'}}>
+                          Upload Logo
+                        </label>
+                        <input id="logo-upload" type="file" accept="image/png,image/jpeg,image/webp,image/svg+xml" onChange={handleLogoUpload} style={{display:'none'}} />
+                        <button onClick={restoreDefaultLogo}
+                          style={{background:'none', border:'1px solid #e2e8f0', borderRadius:6, padding:'7px 14px', fontSize:13, color:'#555', cursor:'pointer'}}>
+                          Restore Default
+                        </button>
+                        {logoMessage && <span style={{fontSize:13, color:'#27ae60', fontWeight:600}}>{logoMessage}</span>}
+                      </div>
+                      {logoError && <div style={{fontSize:12, color:'#e74c3c', marginTop:10}}>{logoError}</div>}
+                    </div>
+                  </div>
+                </div>
+
+                <div style={{padding:20}}>
+                  <div style={{fontSize:13, fontWeight:600, color:'#1a1a2e', marginBottom:10}}>Browser Tab</div>
+                  <div style={{display:'flex', alignItems:'center', gap:10, border:'1px solid #e8e8e8', borderRadius:8, padding:'10px 12px', maxWidth:300}}>
+                    <img src={logoPreview} alt="Favicon preview" style={{width:22, height:22, objectFit:'contain'}} />
+                    <span style={{fontSize:13, color:'#333'}}>{brandName.trim() || DEFAULT_BRAND_NAME}</span>
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
 
           {/* ──────── USERS ──────── */}
           {activeTab === 'users' && (
@@ -700,7 +858,7 @@ export default function Settings() {
           {activeTab === 'integrations' && (
             <div style={{maxWidth:600}}>
               <div style={{fontSize:16, fontWeight:600, color:'#1a1a2e', marginBottom:4}}>Integrations</div>
-              <div style={{fontSize:13, color:'#888', marginBottom:20}}>Connect external systems to sync data with ISP Desk.</div>
+              <div style={{fontSize:13, color:'#888', marginBottom:20}}>Connect external systems to sync data with {brandName.trim() || DEFAULT_BRAND_NAME}.</div>
 
               {/* DMA Softlab card */}
               <div style={{background:'#fff', border:'1px solid #e8e8e8', borderRadius:8, overflow:'hidden'}}>
@@ -786,7 +944,7 @@ export default function Settings() {
                           type={showPass ? 'text' : 'password'}
                           value={dmaConn.password}
                           onChange={e => setDma('password', e.target.value)}
-                          placeholder="••••••••"
+                          placeholder={hasSavedDmaPassword ? 'Saved password' : 'Required'}
                           disabled={dmaStatus === 'connected'}
                           style={{...inp, paddingRight:44, opacity: dmaStatus === 'connected' ? 0.6 : 1}}
                         />

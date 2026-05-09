@@ -94,51 +94,33 @@ async function getClientContext() {
   }
 }
 
+function searchableDMAColumns(m) {
+  return [
+    m.ref_col,
+    m.first_name_col,
+    m.last_name_col,
+    m.phone_col,
+    m.mobile_col,
+    m.email_col,
+    m.zone_col,
+  ].filter(Boolean)
+}
+
+async function getTableColumns(conn, table) {
+  const [rows] = await conn.query(`SHOW COLUMNS FROM ${table}`)
+  return new Set(rows.map(row => row.Field))
+}
+
 router.get('/', requireAuth, async (_req, res) => {
   try {
-    const { cfg, mapping: m, countMap } = await getClientContext()
-    const { rows: ticketClients } = await pool.query(`
+    const { countMap } = await getClientContext()
+
+    const { rows: clients } = await pool.query(`
       SELECT DISTINCT c.*
       FROM clients c
       INNER JOIN tickets t ON LOWER(t.client) = LOWER(c.name)
       ORDER BY c.name
     `)
-    return res.json(ticketClients.map(c => ({
-      id: String(c.id), ref: c.ref, name: c.name,
-      plan: c.plan, zone: c.zone, phone: c.phone, email: c.email,
-      status: c.status, tickets: countMap[c.name] || 0,
-    })))
-
-    // ── Live DMA query ──
-    if (cfg.host && cfg.db_name && cfg.db_user) {
-      let dmaConn
-      try {
-        dmaConn = await mysql.createConnection({
-          host: cfg.host, port: cfg.port || 3306,
-          database: cfg.db_name, user: cfg.db_user, password: cfg.db_pass,
-          connectTimeout: 5000,
-        })
-
-        const [dmaRows] = await dmaConn.query(`SELECT * FROM \`${cfg.tbl_name || 'clients'}\``)
-
-        const clients = []
-        for (const c of dmaRows) {
-          const client = formatDMAClient(c, m, countMap)
-          if (!client) continue
-
-          clients.push(client)
-        }
-
-        return res.json(clients)
-      } catch (dmaErr) {
-        console.error('DMA live query failed, falling back to local:', dmaErr.message)
-      } finally {
-        if (dmaConn) await dmaConn.end().catch(() => {})
-      }
-    }
-
-    // ── Fallback: local DB ──
-    const { rows: clients } = await pool.query('SELECT * FROM clients ORDER BY name')
     res.json(clients.map(c => ({
       id: String(c.id), ref: c.ref, name: c.name,
       plan: c.plan, zone: c.zone, phone: c.phone, email: c.email,
@@ -168,14 +150,20 @@ router.get('/search', requireAuth, async (req, res) => {
         })
 
         const table = escapeIdentifier(cfg.tbl_name, 'clients')
-        const searchableCols = [
-          m.ref_col, m.first_name_col,
-        ].filter(Boolean)
-        const uniqueSearchableCols = [...new Set(searchableCols)]
-        const where = q
-          ? `WHERE ${uniqueSearchableCols.map(col => `${escapeIdentifier(col)} LIKE ?`).join(' OR ')}`
-          : ''
+        const tableColumns = await getTableColumns(dmaConn, table)
+        const uniqueSearchableCols = [...new Set(searchableDMAColumns(m))]
+          .filter(col => tableColumns.has(col))
+        const whereClauses = uniqueSearchableCols.map(col => `${escapeIdentifier(col)} LIKE ?`)
         const params = q ? uniqueSearchableCols.map(() => `%${q}%`) : []
+
+        if (q && tableColumns.has(m.first_name_col) && tableColumns.has(m.last_name_col)) {
+          whereClauses.push(`CONCAT_WS(' ', ${escapeIdentifier(m.first_name_col)}, ${escapeIdentifier(m.last_name_col)}) LIKE ?`)
+          params.push(`%${q}%`)
+        }
+
+        const where = q && whereClauses.length
+          ? `WHERE ${whereClauses.join(' OR ')}`
+          : ''
         let rows = []
         try {
           ;([rows] = await dmaConn.query(
@@ -188,7 +176,8 @@ router.get('/search', requireAuth, async (req, res) => {
           const needle = q.toLowerCase()
           rows = q
             ? broadRows.filter(row =>
-                uniqueSearchableCols.some(col => String(row[col] ?? '').toLowerCase().includes(needle))
+                uniqueSearchableCols.some(col => String(row[col] ?? '').toLowerCase().includes(needle)) ||
+                [row[m.first_name_col], row[m.last_name_col]].filter(Boolean).join(' ').toLowerCase().includes(needle)
               ).slice(0, limit)
             : broadRows.slice(0, limit)
         }
@@ -223,26 +212,6 @@ router.get('/search', requireAuth, async (req, res) => {
 
 router.post('/', requireAuth, async (req, res) => {
   return res.status(405).json({ error: 'Clients are saved automatically when a ticket is created' })
-  const { name, ref, plan, zone, phone, email, status = 'active' } = req.body
-  if (!name?.trim()) return res.status(400).json({ error: 'name is required' })
-  try {
-    let clientRef = ref?.trim()
-    if (!clientRef) {
-      const { rows } = await pool.query('SELECT COUNT(*) AS count FROM clients')
-      clientRef = `CLT-${String(parseInt(rows[0].count) + 1).padStart(3, '0')}`
-    }
-    const { rows } = await pool.query(
-      `INSERT INTO clients (ref, name, plan, zone, phone, email, status)
-       VALUES ($1,$2,$3,$4,$5,$6,$7) RETURNING *`,
-      [clientRef, name.trim(), plan?.trim() || '', zone?.trim() || '', phone?.trim() || '', email?.trim() || '', status]
-    )
-    const c = rows[0]
-    res.status(201).json({ id: String(c.id), ref: c.ref, name: c.name, plan: c.plan, zone: c.zone, phone: c.phone, email: c.email, status: c.status, tickets: 0 })
-  } catch (err) {
-    console.error(err)
-    if (err.code === '23505') return res.status(409).json({ error: 'Reference already exists' })
-    res.status(500).json({ error: err.message })
-  }
 })
 
 router.delete('/:id', requireAuth, async (req, res) => {

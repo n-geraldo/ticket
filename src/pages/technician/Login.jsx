@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
+import BrandLogo from '../../components/BrandLogo'
 import { useAuth } from '../../contexts/AuthContext'
 
 export default function TechLogin() {
@@ -39,10 +40,7 @@ export default function TechLogin() {
     <div style={{ minHeight: '100vh', display: 'flex', flexDirection: 'column' }}>
         {/* Brand header */}
         <div style={{ background: '#1a1a2e', padding: '32px 24px 56px', textAlign: 'center' }}>
-          <div style={{ fontWeight: 800, fontSize: 26, color: '#fff', letterSpacing: 1, marginBottom: 4 }}>ISP DESK</div>
-          <div style={{ fontFamily: 'IBM Plex Mono, monospace', fontSize: 10, color: 'rgba(255,255,255,0.35)', textTransform: 'uppercase', letterSpacing: '0.1em' }}>
-            Technical Management
-          </div>
+          <BrandLogo size={64} subtitle="Technical Management" />
         </div>
 
         {/* Form card */}

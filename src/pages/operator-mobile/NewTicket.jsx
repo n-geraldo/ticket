@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react'
 import { useNavigate, useLocation } from 'react-router-dom'
-import { createTicket, getTechnicians, getZones, getCategories, searchClients, syncLocalDMAConnection } from '../../data/api'
+import { createTicket, getTechnicians, getZones, getCategories, searchClients } from '../../data/api'
 import { useAuth } from '../../contexts/AuthContext'
 
 const PRIORITIES = [
@@ -20,6 +20,11 @@ const inputStyle = {
   outline: 'none', fontFamily: 'inherit', background: '#fff',
 }
 
+const errorInputStyle = {
+  border: '1.5px solid #e74c3c',
+  boxShadow: '0 0 0 3px rgba(231,76,60,0.1)',
+}
+
 const INSTALL_CATEGORY_NAME = 'New Installation'
 const normalizeCategory = (name) => String(name || '').toLowerCase().replace(/[^a-z]/g, '')
 const isInstallCategory = (name) => ['newinstallation', 'newinstalation'].includes(normalizeCategory(name))
@@ -35,6 +40,7 @@ export default function MobileNewTicket() {
   const [showClientOptions, setShowClientOptions] = useState(false)
   const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState('')
+  const [fieldErrors, setFieldErrors] = useState({})
 
   const prefill = location.state || {}
 
@@ -68,7 +74,6 @@ export default function MobileNewTicket() {
         setCategories(cats)
       })
       .catch(console.error)
-    syncLocalDMAConnection().catch(console.error)
   }, [])
 
   useEffect(() => {
@@ -87,7 +92,11 @@ export default function MobileNewTicket() {
     return () => clearTimeout(timer)
   }, [form.client])
 
-  const set = (k, v) => setForm(f => ({ ...f, [k]: v }))
+  const set = (k, v) => {
+    setForm(f => ({ ...f, [k]: v }))
+    setFieldErrors(errors => ({ ...errors, [k]: '' }))
+    setError('')
+  }
 
   const selectClient = (client) => {
     if (!client) return
@@ -100,6 +109,8 @@ export default function MobileNewTicket() {
       phone: client.phone || f.phone,
       contract: client.plan || f.contract,
     }))
+    setFieldErrors(errors => ({ ...errors, client: '' }))
+    setError('')
     setShowClientOptions(false)
   }
 
@@ -113,8 +124,14 @@ export default function MobileNewTicket() {
 
   const handleSubmit = async (e) => {
     e.preventDefault()
-    if (!form.client.trim() || !form.description.trim()) {
-      setError('Client and description are required.')
+    const nextErrors = {}
+    if (!form.client.trim()) nextErrors.client = 'Client is required.'
+    if (!form.category.trim()) nextErrors.category = 'Category is required.'
+    if (!form.description.trim()) nextErrors.description = 'Description is required.'
+
+    if (Object.keys(nextErrors).length) {
+      setFieldErrors(nextErrors)
+      setError('Please fill the required fields.')
       return
     }
     setError('')
@@ -145,6 +162,11 @@ export default function MobileNewTicket() {
     }
   }
 
+  const fieldStyle = key => ({
+    ...inputStyle,
+    ...(fieldErrors[key] ? errorInputStyle : {}),
+  })
+
   return (
     <div style={{ minHeight: '100vh', background: '#f5f5f5', display: 'flex', flexDirection: 'column' }}>
 
@@ -154,7 +176,7 @@ export default function MobileNewTicket() {
         <span style={{ fontWeight: 700, fontSize: 17, color: '#fff' }}>New Ticket</span>
       </div>
 
-      <form onSubmit={handleSubmit} style={{ flex: 1, overflow: 'auto', padding: '14px 14px 24px', display: 'flex', flexDirection: 'column', gap: 10 }}>
+      <form onSubmit={handleSubmit} noValidate style={{ flex: 1, overflow: 'auto', padding: '14px 14px 24px', display: 'flex', flexDirection: 'column', gap: 10 }}>
 
         {/* Type */}
         <div style={{ background: '#fff', borderRadius: 12, padding: 16, boxShadow: '0 1px 4px rgba(0,0,0,0.07)' }}>
@@ -174,15 +196,14 @@ export default function MobileNewTicket() {
         <div style={{ background: '#fff', borderRadius: 12, padding: 16, boxShadow: '0 1px 4px rgba(0,0,0,0.07)', display: 'flex', flexDirection: 'column', gap: 12 }}>
           <div style={{ fontFamily: 'IBM Plex Mono, monospace', fontSize: 9, color: '#aaa', textTransform: 'uppercase', letterSpacing: '0.08em' }}>Client Info</div>
           <div style={{ position: 'relative' }}>
-            <label style={labelStyle}>Client Name *</label>
+            <label style={{ ...labelStyle, color: fieldErrors.client ? '#e74c3c' : labelStyle.color }}>Client Name *</label>
             <input
               value={form.client}
               onChange={e => { set('client', e.target.value); setShowClientOptions(true) }}
               onFocus={() => setShowClientOptions(true)}
               onBlur={pickExactClient}
               placeholder="Search and select a client"
-              style={inputStyle}
-              required
+              style={fieldStyle('client')}
             />
             {showClientOptions && clientOptions.length > 0 && (
               <div style={{ position: 'absolute', top: 61, left: 0, right: 0, background: '#fff', border: '1px solid #dbe4f0', borderRadius: 10, boxShadow: '0 10px 28px rgba(0,0,0,0.16)', zIndex: 20, overflow: 'hidden', maxHeight: 260, overflowY: 'auto' }}>
@@ -200,6 +221,7 @@ export default function MobileNewTicket() {
                 ))}
               </div>
             )}
+            {fieldErrors.client && <div style={{ fontSize: 12, color: '#e74c3c', marginTop: 6 }}>{fieldErrors.client}</div>}
           </div>
           <div>
             <label style={labelStyle}>Phone</label>
@@ -237,14 +259,16 @@ export default function MobileNewTicket() {
             </div>
           </div>
           <div>
-            <label style={labelStyle}>Category</label>
-            <select value={form.category} onChange={e => set('category', e.target.value)} disabled={form.type === 'install'} style={{ ...inputStyle, background: form.type === 'install' ? '#f8fafc' : '#fff' }}>
+            <label style={{ ...labelStyle, color: fieldErrors.category ? '#e74c3c' : labelStyle.color }}>Category *</label>
+            <select value={form.category} onChange={e => set('category', e.target.value)} disabled={form.type === 'install'} style={{ ...fieldStyle('category'), background: form.type === 'install' ? '#f8fafc' : '#fff' }}>
               {categoryOptions.map(c => <option key={c.id} value={c.name}>{c.name}</option>)}
             </select>
+            {fieldErrors.category && <div style={{ fontSize: 12, color: '#e74c3c', marginTop: 6 }}>{fieldErrors.category}</div>}
           </div>
           <div>
-            <label style={labelStyle}>Short Description *</label>
-            <input value={form.description} onChange={e => set('description', e.target.value)} placeholder="One-line summary" style={inputStyle} required />
+            <label style={{ ...labelStyle, color: fieldErrors.description ? '#e74c3c' : labelStyle.color }}>Short Description *</label>
+            <input value={form.description} onChange={e => set('description', e.target.value)} placeholder="One-line summary" style={fieldStyle('description')} />
+            {fieldErrors.description && <div style={{ fontSize: 12, color: '#e74c3c', marginTop: 6 }}>{fieldErrors.description}</div>}
           </div>
           <div>
             <label style={labelStyle}>Full Description</label>

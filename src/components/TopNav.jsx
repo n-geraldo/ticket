@@ -1,5 +1,6 @@
 import { useNavigate, useLocation } from 'react-router-dom'
 import { useAuth } from '../contexts/AuthContext'
+import BrandLogo from './BrandLogo'
 import NotificationBell from './NotificationBell'
 
 const NAV_ITEMS = ['Tickets', 'Clients', 'Reports', 'Settings']
@@ -26,7 +27,7 @@ export default function TopNav() {
 
   return (
     <div style={{ height: 48, background: '#1a1a2e', display: 'flex', alignItems: 'center', padding: '0 20px', gap: 24, flexShrink: 0 }}>
-      <div style={{ fontWeight: 700, fontSize: 18, color: '#fff', letterSpacing: '0.06em', flexShrink: 0 }}>ISP DESK</div>
+      <BrandLogo size={34} compact />
       <div style={{ flex: 1 }} />
       {NAV_ITEMS.map(n => (
         <button key={n} onClick={() => navigate(NAV_ROUTES[n])} style={{

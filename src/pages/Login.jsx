@@ -1,5 +1,7 @@
 import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
+import { getBrandName } from '../branding'
+import BrandLogo from '../components/BrandLogo'
 import { useAuth } from '../contexts/AuthContext'
 
 const isMobile = () =>
@@ -13,6 +15,7 @@ function redirectForUser(user) {
 export default function Login() {
   const navigate = useNavigate()
   const { login } = useAuth()
+  const [brandName] = useState(getBrandName)
   const [username, setUsername] = useState('')
   const [password, setPassword] = useState('')
   const [showPw, setShowPw] = useState(false)
@@ -40,10 +43,7 @@ export default function Login() {
       <div style={{ minHeight: '100vh', display: 'flex', flexDirection: 'column' }}>
         {/* Brand */}
         <div style={{ background: '#1a1a2e', padding: '40px 24px 56px', textAlign: 'center' }}>
-          <div style={{ fontWeight: 800, fontSize: 28, color: '#fff', letterSpacing: 1, marginBottom: 4 }}>ISP DESK</div>
-          <div style={{ fontFamily: 'IBM Plex Mono, monospace', fontSize: 10, color: 'rgba(255,255,255,0.35)', textTransform: 'uppercase', letterSpacing: '0.1em' }}>
-            Technical Management System
-          </div>
+          <BrandLogo size={68} subtitle="Technical Management System" />
         </div>
 
         {/* Form card */}
@@ -104,10 +104,7 @@ export default function Login() {
       {/* Left branding */}
       <div style={{ width: 420, background: '#1a1a2e', display: 'flex', flexDirection: 'column', padding: 48, justifyContent: 'space-between', flexShrink: 0 }}>
         <div>
-          <div style={{ fontWeight: 800, fontSize: 28, color: '#fff', letterSpacing: 1, marginBottom: 6 }}>ISP DESK</div>
-          <div style={{ fontFamily: 'IBM Plex Mono, monospace', fontSize: 11, color: 'rgba(255,255,255,0.35)', textTransform: 'uppercase', letterSpacing: '0.12em' }}>
-            Technical Management System
-          </div>
+          <BrandLogo size={60} subtitle="Technical Management System" compact />
         </div>
         <div style={{ display: 'flex', flexDirection: 'column', gap: 28 }}>
           {[
@@ -124,7 +121,7 @@ export default function Login() {
             </div>
           ))}
         </div>
-        <div style={{ fontFamily: 'IBM Plex Mono, monospace', fontSize: 10, color: 'rgba(255,255,255,0.2)' }}>© 2026 ISP Desk</div>
+        <div style={{ fontFamily: 'IBM Plex Mono, monospace', fontSize: 10, color: 'rgba(255,255,255,0.2)' }}>© 2026 {brandName}</div>
       </div>
 
       {/* Right form */}
